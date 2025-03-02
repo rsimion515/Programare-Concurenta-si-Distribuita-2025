@@ -2,7 +2,7 @@ SETTINGS_TEST_MODE_TCP       = 1
 SETTINGS_TEST_MODE_UDP       = 2
 SETTINGS_TEST_MODE_QUIC      = 3
 
-SETTINGS_TEST_MODES = [SETTINGS_TEST_MODE_TCP, SETTINGS_TEST_MODE_UDP, SETTINGS_TEST_MODE_QUIC]
+SETTINGS_TEST_MODES = [SETTINGS_TEST_MODE_TCP, SETTINGS_TEST_MODE_UDP]
 
 SETTINGS_METHOD_STREAMING     = 1
 SETTINGS_METHOD_STOP_AND_WAIT = 2
@@ -59,7 +59,7 @@ def get_settings_json(test_mode, method, size, block_size):
 
     return settings
 
-def generate_cmdline(test_mode, method, size, block_size):
+def generate_cmdline(test_mode, method, size, block_size, file_report = None):
     command_line = '--host "127.0.0.1" --port 8080 --termination_signal "END"'
 
     if test_mode == SETTINGS_TEST_MODE_TCP:
@@ -74,7 +74,7 @@ def generate_cmdline(test_mode, method, size, block_size):
     if method == SETTINGS_METHOD_STREAMING:
         command_line += ' --method "streaming"'
     elif method == SETTINGS_METHOD_STOP_AND_WAIT:
-        command_line += ' --method "stop_and_wait"'
+        command_line += ' --method "stop-and-wait"'
     else:
         return ""
 
@@ -84,12 +84,15 @@ def generate_cmdline(test_mode, method, size, block_size):
         command_line += ' --size "{}"'.format(size)
 
     if block_size == SETTINGS_BLOCK_SIZES_FIXED_1024:
-        command_line += ' --block-size "{}"'.format(1024)
+        command_line += ' --block_size "{}"'.format(1024)
     elif block_size == SETTINGS_BLOCK_SIZES_FIXED_32768:
-        command_line += ' --block-size "{}"'.format(32768)
+        command_line += ' --block_size "{}"'.format(32768)
     elif block_size == SETTINGS_BLOCK_SIZES_RANDOM:
-        command_line += ' --block-size {}'.format(0)
+        command_line += ' --block_size {}'.format(0)
     else:
         return ""
+
+    if file_report is not None:
+        command_line += ' --file_report "{}"'.format(file_report)
 
     return command_line

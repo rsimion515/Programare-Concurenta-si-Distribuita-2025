@@ -1,4 +1,5 @@
 import argparse
+import json
 import socket
 import time
 
@@ -112,6 +113,8 @@ def main():
     parser.add_argument("--termination_signal")
     parser.add_argument("--size", type=int)
     parser.add_argument("--block_size", type=int)
+    parser.add_argument("--file_report")
+
     settings = vars(parser.parse_args())
 
     settings["termination_signal"] = settings["termination_signal"].encode()
@@ -125,9 +128,24 @@ def main():
     elif settings["protocol"] == "udp":
         count_received, size_received, total_time = udp_server(settings)
 
-    print("Received packets:", count_received)
-    print("Received total size:", size_received)
-    print("Execution time:", total_time)
+    if "file_report" in settings:
+        with open(settings["file_report"], "w+") as file:
+            settings["termination_signal"] = settings["termination_signal"].decode()
+
+            data = {
+                'type': 'server',
+                'results': {
+                    'count_received': count_received,
+                    'size_received': size_received,
+                    'total_time': total_time
+                },
+                'settings': settings
+            }
+            file.write(json.dumps(data, indent=4))
+    else:
+        print("Received packets: {value}".format(value=count_received))
+        print("Received total size: {value}".format(value=size_received))
+        print("Total time: {value}".format(value=total_time))
 
 if __name__ == "__main__":
     main()
