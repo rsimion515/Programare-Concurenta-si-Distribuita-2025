@@ -1,8 +1,15 @@
 import argparse
+import asyncio
 import json
 import socket
 import random
 import time
+
+from aioquic.asyncio import connect
+from aioquic.quic.configuration import QuicConfiguration
+from aioquic.asyncio.protocol import QuicConnectionProtocol
+from aioquic.quic.events import StreamDataReceived
+
 
 # Generate a random set of blocks in order to simulate real-world data structures
 def generate_list_of_blocks(settings):
@@ -115,6 +122,62 @@ def udp_client(settings, block_sizes):
 
     return total_packets_sent, total_packets_size_sent, end_time - start_time
 
+
+class QUICClientProtocol(QuicConnectionProtocol):
+    def __init__(self, *args, settings, return_values, block_sizes, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.settings = settings
+        self.return_values = return_values
+
+        self.start_time = 0
+
+        self.block_sizes = block_sizes
+
+        self.await_response = False
+        if self.settings['method'] == "stop-and-wait":
+            self.await_response = True
+            self.received_ack = asyncio.Event()
+
+    async def send_data(self):
+        # Pre-allocating our buffer for future slicing
+        buffer_data = b'0' * 65535
+
+        self.start_time = time.time()
+
+        for block in self.block_sizes:
+            # Sending only a slice of the buffer
+            self._quic.send_stream_data(0, buffer_data[:block])
+
+            # Updating our metrics
+            self.return_values["count_sent"] += 1
+            self.return_values["size_sent"] += len(block)
+
+            if self.await_response:
+                # Wait for server response
+                await self.received_ack.wait()
+                # Reset for next message
+                self.received_ack.clear()
+
+        self._quic.send_stream_data(0, self.settings["termination_signal"])
+        self.return_values["total_time"] = time.time() - self.start_time
+
+    def quic_event_received(self, event):
+        if isinstance(event, StreamDataReceived) and event.data == b'ACK':
+            self.received_ack.set()
+
+async def quic_client(settings, block_sizes):
+    configuration = QuicConfiguration(is_client=True)
+
+    return_values = {"count_sent": 0, "size_sent": 0, "total_time": 0}
+    async with connect(settings["host"], settings["port"], configuration=configuration,
+                       create_protocol=lambda *args, **kwargs: QUICClientProtocol(*args, settings=settings, return_values=return_values, block_sizes=block_sizes, **kwargs)) as client:
+        protocol = client.get_protocol()
+        await protocol.send_data()
+
+    return return_values["count_sent"], return_values["size_sent"], return_values["total_time"]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--protocol", choices=["tcp", "udp", "quic"])
@@ -143,6 +206,8 @@ def main():
         count_received, size_received, total_time = tcp_client(settings, block_sizes)
     elif settings["protocol"] == "udp":
         count_received, size_received, total_time = udp_client(settings, block_sizes)
+    elif settings["protocol"] == "quic":
+        count_received, size_received, total_time = asyncio.run(quic_client(settings, block_sizes))
 
     if "file_report" in settings:
         with open(settings["file_report"], "w+") as file:

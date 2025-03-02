@@ -1,7 +1,12 @@
 import argparse
+import asyncio
 import json
 import socket
 import time
+
+from aioquic.asyncio import serve
+from aioquic.quic.configuration import QuicConfiguration
+from aioquic.asyncio.protocol import QuicConnectionProtocol
 
 def tcp_server(settings):
     # Initializing our variables for metrics
@@ -104,6 +109,53 @@ def udp_server(settings):
     return total_packets_received, total_packets_size_received, end_time - start_time
 
 
+class QUICServerProtocol(QuicConnectionProtocol):
+    def __init__(self, *args, settings, return_values, server_stop, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.server_stop = server_stop
+
+        self.settings = settings
+        self.return_values = return_values
+
+        self.respond_back = False
+        if self.settings['method'] == "stop-and-wait":
+            self.respond_back = True
+
+        self.start_time = 0
+
+    def quic_event_received(self, event):
+        if hasattr(event, "data"):
+            if event.data == self.settings["termination_signal"]:
+                self.return_values["total_time"] = time.time() - self.start_time
+
+                self._quic.close()
+                self.server_stop().set()
+            else:
+                if self.start_time == 0:
+                    self.start_time = time.time()
+
+                self.return_values["count_received"] += 1
+                self.return_values["size_received"] += len(event.data)
+
+                if self.respond_back:
+                    self._quic.send_stream_data(0, b'ACK')
+
+async def quic_server(settings):
+    configuration = QuicConfiguration(is_client=False)
+    server_stop = asyncio.Event()
+
+    return_values = {"count_received": 0, "size_received": 0, "total_time": 0}
+    server = await serve(settings["host"], settings["port"], configuration=configuration,
+                         create_protocol=lambda *args, **kwargs: QUICServerProtocol(*args, settings=settings, return_values=return_values, server_stop=server_stop, **kwargs))
+
+    print("Server initialized, ready to go")
+
+    await server_stop.wait()
+
+    return return_values["count_received"], return_values["size_received"], return_values["total_time"]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--protocol", choices=["tcp", "udp", "quic"])
@@ -127,6 +179,8 @@ def main():
         count_received, size_received, total_time = tcp_server(settings)
     elif settings["protocol"] == "udp":
         count_received, size_received, total_time = udp_server(settings)
+    elif settings["protocol"] == "quic":
+        count_received, size_received, total_time = asyncio.run(quic_server(settings))
 
     if "file_report" in settings:
         with open(settings["file_report"], "w+") as file:
