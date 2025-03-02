@@ -69,17 +69,17 @@ def generate_cmdline(test_mode, method, size, block_size):
     elif test_mode == SETTINGS_TEST_MODE_QUIC:
         command_line += ' --protocol "quic"'
     else:
-        return {}
+        return ""
 
     if method == SETTINGS_METHOD_STREAMING:
         command_line += ' --method "streaming"'
     elif method == SETTINGS_METHOD_STOP_AND_WAIT:
         command_line += ' --method "stop_and_wait"'
     else:
-        return {}
+        return ""
 
     if size not in SETTINGS_TEST_SIZES:
-        return {}
+        return ""
     else:
         command_line += ' --size "{}"'.format(size)
 
@@ -90,6 +90,6 @@ def generate_cmdline(test_mode, method, size, block_size):
     elif block_size == SETTINGS_BLOCK_SIZES_RANDOM:
         command_line += ' --block-size {}'.format(0)
     else:
-        return {}
+        return ""
 
     return command_line
