@@ -16,6 +16,19 @@ def generate_list_of_blocks(settings):
 
     return block_sizes
 
+def generate_list_of_blocks_fixed(settings):
+    block_sizes = []
+
+    count_of_full_blocks = settings["size"] // settings["block_size"]
+    size_remainder = settings["size"] % settings["block_size"]
+    block_sizes.extend([settings["block_size"]] * count_of_full_blocks)
+
+    if size_remainder > 0:
+        block_sizes.append(size_remainder)
+
+    return block_sizes
+
+
 def tcp_client(settings, block_sizes):
 
     # Pre-allocating our buffer for future slicing
@@ -109,6 +122,7 @@ def main():
     parser.add_argument("--port", type=int)
     parser.add_argument("--termination_signal")
     parser.add_argument("--size", type=int)
+    parser.add_argument("--block_size", type=int)
     settings = vars(parser.parse_args())
 
     settings["termination_signal"] = settings["termination_signal"].encode()
@@ -117,7 +131,10 @@ def main():
     size_received = 0
     total_time = 0
 
-    block_sizes = generate_list_of_blocks(settings)
+    if settings["block_size"] == 0:
+        block_sizes = generate_list_of_blocks(settings)
+    else:
+        block_sizes = generate_list_of_blocks_fixed(settings)
 
     if settings["protocol"] == "tcp":
         count_received, size_received, total_time = tcp_client(settings, block_sizes)

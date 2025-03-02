@@ -111,6 +111,7 @@ def main():
     parser.add_argument("--port", type=int)
     parser.add_argument("--termination_signal")
     parser.add_argument("--size", type=int)
+    parser.add_argument("--block_size", type=int)
     settings = vars(parser.parse_args())
 
     settings["termination_signal"] = settings["termination_signal"].encode()
