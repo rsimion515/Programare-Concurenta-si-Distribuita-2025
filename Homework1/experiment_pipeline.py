@@ -16,6 +16,7 @@ for iteration in range(100):
         for method in SETTINGS_METHODS:
             for test_size in SETTINGS_TEST_SIZES:
                 for block_size in SETTINGS_BLOCK_SIZES:
+
                     settings = get_settings_json(protocol, method, test_size, block_size)
 
                     report_file_name_server = ("server_{protocol}_{method}_{test_size}_{block_size}_{iteration}.json"
@@ -45,9 +46,9 @@ for iteration in range(100):
                     client_process = subprocess.Popen(client_args, shell=True)
 
                     try:
-                        # Wait for up to 60 seconds
-                        server_process.wait(timeout=60)
-                        client_process.wait(timeout=60)
+                        # Wait for up to 10 minutes
+                        server_process.wait(timeout=600)
+                        client_process.wait(timeout=600)
                     except subprocess.TimeoutExpired:
                         print("Test failed for command: ", generate_cmdline(protocol, method, test_size, block_size))
                         server_process.terminate()

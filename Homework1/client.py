@@ -143,15 +143,18 @@ class QUICClientProtocol(QuicConnectionProtocol):
         # Pre-allocating our buffer for future slicing
         buffer_data = b'0' * 65535
 
+        stream_id = self._quic.get_next_available_stream_id()
+
         self.start_time = time.time()
 
         for block in self.block_sizes:
             # Sending only a slice of the buffer
-            self._quic.send_stream_data(0, buffer_data[:block])
+            self._quic.send_stream_data(stream_id, buffer_data[:block])
+            self.transmit()
 
             # Updating our metrics
             self.return_values["count_sent"] += 1
-            self.return_values["size_sent"] += len(block)
+            self.return_values["size_sent"] += block
 
             if self.await_response:
                 # Wait for server response
@@ -159,7 +162,13 @@ class QUICClientProtocol(QuicConnectionProtocol):
                 # Reset for next message
                 self.received_ack.clear()
 
-        self._quic.send_stream_data(0, self.settings["termination_signal"])
+        self._quic.send_stream_data(stream_id, self.settings["termination_signal"])
+        if self.await_response:
+            # Wait for server response
+            await self.received_ack.wait()
+            # Reset for next message
+            self.received_ack.clear()
+
         self.return_values["total_time"] = time.time() - self.start_time
 
     def quic_event_received(self, event):
@@ -169,11 +178,13 @@ class QUICClientProtocol(QuicConnectionProtocol):
 async def quic_client(settings, block_sizes):
     configuration = QuicConfiguration(is_client=True)
 
+    # Disable TLS verification for testing
+    configuration.verify_mode = False
+
     return_values = {"count_sent": 0, "size_sent": 0, "total_time": 0}
     async with connect(settings["host"], settings["port"], configuration=configuration,
                        create_protocol=lambda *args, **kwargs: QUICClientProtocol(*args, settings=settings, return_values=return_values, block_sizes=block_sizes, **kwargs)) as client:
-        protocol = client.get_protocol()
-        await protocol.send_data()
+        await client.send_data()
 
     return return_values["count_sent"], return_values["size_sent"], return_values["total_time"]
 
@@ -216,8 +227,8 @@ def main():
             data = {
                 'type': 'client',
                 'results': {
-                    'count_received': count_received,
-                    'size_received': size_received,
+                    'count_sent': count_received,
+                    'size_sent': size_received,
                     'total_time': total_time
                 },
                 'settings': settings
@@ -230,6 +241,8 @@ def main():
         print("Sent packets: {value}".format(value=count_received))
         print("Sent total size: {value}".format(value=size_received))
         print("Total time: {value}".format(value=total_time))
+
+    print("Client finished execution")
 
 
 if __name__ == "__main__":

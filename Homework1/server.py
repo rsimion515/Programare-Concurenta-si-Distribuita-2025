@@ -1,12 +1,17 @@
 import argparse
 import asyncio
 import json
+import os.path
 import socket
 import time
+
+from pathlib import Path
 
 from aioquic.asyncio import serve
 from aioquic.quic.configuration import QuicConfiguration
 from aioquic.asyncio.protocol import QuicConnectionProtocol
+from aioquic.quic.events import StreamDataReceived, ConnectionTerminated
+
 
 def tcp_server(settings):
     # Initializing our variables for metrics
@@ -125,12 +130,26 @@ class QUICServerProtocol(QuicConnectionProtocol):
         self.start_time = 0
 
     def quic_event_received(self, event):
-        if hasattr(event, "data"):
-            if event.data == self.settings["termination_signal"]:
+        if isinstance(event, StreamDataReceived):
+            if self.settings["termination_signal"] in event.data:
+                print("Received end:", event.data)
+
+                self.return_values["count_received"] += 1
+                self.return_values["size_received"] += len(event.data) - len(self.settings["termination_signal"])
+
                 self.return_values["total_time"] = time.time() - self.start_time
 
-                self._quic.close()
-                self.server_stop().set()
+                if self.respond_back:
+                    self._quic.send_stream_data(0, b'ACK')
+                    self.transmit()
+
+                # Close the QUIC connection
+                self._quic.close(error_code=0)
+                # Ensures all buffered data is sent
+                self.transmit()
+
+                self.server_stop.set()
+                self.close(error_code=0)
             else:
                 if self.start_time == 0:
                     self.start_time = time.time()
@@ -140,9 +159,25 @@ class QUICServerProtocol(QuicConnectionProtocol):
 
                 if self.respond_back:
                     self._quic.send_stream_data(0, b'ACK')
+                    self.transmit()
+        elif isinstance(event, ConnectionTerminated):
+            print("Connection terminated")
+
+            self.return_values["total_time"] = time.time() - self.start_time
+
+            # Close the QUIC connection
+            self._quic.close(error_code=0)
+            # Ensures all buffered data is sent
+            self.transmit()
+
+            self.server_stop.set()
+            self.close(error_code=0)
 
 async def quic_server(settings):
     configuration = QuicConfiguration(is_client=False)
+
+    configuration.load_cert_chain(certfile=Path(os.path.join(os.getcwd(), "cert.pem")), keyfile=Path(os.path.join(os.getcwd(), "key.pem")))
+
     server_stop = asyncio.Event()
 
     return_values = {"count_received": 0, "size_received": 0, "total_time": 0}
@@ -152,6 +187,10 @@ async def quic_server(settings):
     print("Server initialized, ready to go")
 
     await server_stop.wait()
+    print("Server stopped")
+
+    # Properly close the QUIC server
+    server.close()
 
     return return_values["count_received"], return_values["size_received"], return_values["total_time"]
 
@@ -200,6 +239,9 @@ def main():
         print("Received packets: {value}".format(value=count_received))
         print("Received total size: {value}".format(value=size_received))
         print("Total time: {value}".format(value=total_time))
+
+    print("Server finished execution")
+
 
 if __name__ == "__main__":
     main()
