@@ -221,7 +221,7 @@ def main():
     elif settings["protocol"] == "quic":
         count_received, size_received, total_time = asyncio.run(quic_server(settings))
 
-    if "file_report" in settings:
+    if "file_report" in settings and settings["file_report"] is not None:
         with open(settings["file_report"], "w+") as file:
             settings["termination_signal"] = settings["termination_signal"].decode()
 
